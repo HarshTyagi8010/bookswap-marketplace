@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BookSwap Marketplace</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 0; background: #fafafa; }
+    header { background: #1f2937; color: white; padding: 16px; }
+    main { padding: 16px; max-width: 960px; margin: 0 auto; }
+    .card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    input, select { padding: 8px; border-radius: 8px; border: 1px solid #d1d5db; width: 100%; box-sizing: border-box; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #111827; background: #111827; color: white; cursor: pointer; }
+    button.secondary { background: white; color: #111827; border-color: #9ca3af; }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(250px,1fr)); }
+    .muted { color: #6b7280; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .hide { display:none; }
+    .book-img { width:100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px; border:1px solid #e5e7eb; background:#f3f4f6; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📚 BookSwap Marketplace</h1>
+    <div id="user-info" class="muted"></div>
+  </header>
+  <main>
+    <section class="card" id="auth-section">
+      <h2>Login / Register</h2>
+      <div class="row">
+        <input id="name" placeholder="Name (for register)" />
+        <input id="email" placeholder="Email" />
+        <input id="password" placeholder="Password" type="password" />
+        <button onclick="register()">Register</button>
+        <button class="secondary" onclick="login()">Login</button>
+      </div>
+    </section>
+
+    <section class="card hide" id="create-book">
+      <h2>Post a Book</h2>
+      <div class="row">
+        <input id="title" placeholder="Title" />
+        <input id="author" placeholder="Author" />
+        <select id="condition">
+          <option>good</option>
+          <option>new</option>
+          <option>like new</option>
+          <option>fair</option>
+          <option>poor</option>
+        </select>
+        <input id="imageUrl" placeholder="Image URL (optional)" />
+        <button onclick="postBook()">Post</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2>All Books</h2>
+        <button class="secondary" onclick="loadBooks()">Refresh</button>
+      </div>
+      <div id="books" class="grid"></div>
+    </section>
+
+    <section class="card hide" id="my-books-card">
+      <div class="row" style="justify-content:space-between">
+        <h2>My Books</h2>
+        <button class="secondary" onclick="loadMyBooks()">Refresh</button>
+      </div>
+      <div id="my-books" class="grid"></div>
+    </section>
+
+    <section class="card hide" id="requests-card">
+      <h2>My Requests (Sent)</h2>
+      <div id="my-requests"></div>
+      <h2>Incoming Requests (For My Books)</h2>
+      <div id="incoming-requests"></div>
+    </section>
+  </main>
+
+  <script>
+    const tokenKey = 'bookswap_token';
+    const api = (path, opts={}) => {
+      const token = localStorage.getItem(tokenKey);
+      return fetch(path, {
+        ...opts,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(opts.headers || {}),
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+        }
+      }).then(r => r.json());
+    };
+
+    function setAuthedUI(user) {
+      document.getElementById('auth-section').classList.add('hide');
+      document.getElementById('create-book').classList.remove('hide');
+      document.getElementById('my-books-card').classList.remove('hide');
+      document.getElementById('requests-card').classList.remove('hide');
+      document.getElementById('user-info').innerText = `Logged in as ${user.name} (${user.email})`;
+    }
+
+    function register() {
+      const name = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value.trim();
+      api('/api/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) })
+        .then(data => {
+          if (data.token) {
+            localStorage.setItem(tokenKey, data.token);
+            setAuthedUI(data.user);
+            loadMyBooks();
+            loadRequests();
+          } else {
+            alert(data.message || 'Registration failed');
+          }
+        });
+    }
+
+    function login() {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value.trim();
+      api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+        .then(data => {
+          if (data.token) {
+            localStorage.setItem(tokenKey, data.token);
+            setAuthedUI(data.user);
+            loadMyBooks();
+            loadRequests();
+          } else {
+            alert(data.message || 'Login failed');
+          }
+        });
+    }
+
+    function postBook() {
+      const title = document.getElementById('title').value.trim();
+      const author = document.getElementById('author').value.trim();
+      const condition = document.getElementById('condition').value;
+      const imageUrl = document.getElementById('imageUrl').value.trim();
+      api('/api/books', { method: 'POST', body: JSON.stringify({ title, author, condition, imageUrl }) })
+        .then(data => {
+          if (data._id) {
+            loadBooks();
+            loadMyBooks();
+            document.getElementById('title').value='';
+            document.getElementById('author').value='';
+            document.getElementById('imageUrl').value='';
+          } else {
+            alert(data.message || 'Failed to post');
+          }
+        });
+    }
+
+    function loadBooks() {
+      api('/api/books').then(list => {
+        const el = document.getElementById('books');
+        el.innerHTML = '';
+        list.forEach(b => {
+          const div = document.createElement('div');
+          div.className = 'card';
+          div.innerHTML = `
+            <img class="book-img" src="${b.imageUrl || ''}" onerror="this.style.display='none'"/>
+            <h3>${b.title}</h3>
+            <div class="muted">by ${b.author} • Condition: ${b.condition}</div>
+            <div class="muted">Owner: ${b.owner?.name || 'Unknown'}</div>
+            <div class="row">
+              <button onclick="requestBook('${b._id}')">Request</button>
+            </div>
+          `;
+          el.appendChild(div);
+        });
+      });
+    }
+
+    function loadMyBooks() {
+      api('/api/books/mine').then(list => {
+        const el = document.getElementById('my-books');
+        el.innerHTML = '';
+        list.forEach(b => {
+          const div = document.createElement('div');
+          div.className = 'card';
+          div.innerHTML = `
+            <h3>${b.title}</h3>
+            <div class="muted">by ${b.author} • ${b.condition}</div>
+            <div class="row">
+              <button onclick="deleteBook('${b._id}')" class="secondary">Delete</button>
+            </div>
+          `;
+          el.appendChild(div);
+        });
+      });
+    }
+
+    function deleteBook(id) {
+      api('/api/books/' + id, { method: 'DELETE' }).then(resp => {
+        if (resp.message === 'Deleted') {
+          loadBooks();
+          loadMyBooks();
+          loadRequests();
+        } else alert(resp.message || 'Delete failed');
+      });
+    }
+
+    function requestBook(bookId) {
+      api('/api/requests', { method: 'POST', body: JSON.stringify({ bookId }) })
+        .then(data => {
+          if (data._id) {
+            alert('Requested!');
+            loadRequests();
+          } else {
+            alert(data.message || 'Request failed');
+          }
+        });
+    }
+
+    function loadRequests() {
+      api('/api/requests/mine').then(list => {
+        const el = document.getElementById('my-requests');
+        el.innerHTML = list.map(r => `<div>• ${r.book?.title || 'Unknown'} — <b>${r.status}</b></div>`).join('') || '<div class="muted">No requests yet.</div>';
+      });
+      api('/api/requests/received').then(list => {
+        const el = document.getElementById('incoming-requests');
+        el.innerHTML = list.map(r => `
+          <div class="row" style="justify-content:space-between; margin: 6px 0;">
+            <div>• ${r.book?.title || 'Unknown'} — <b>${r.status}</b></div>
+            <div class="row">
+              <button onclick="updateRequest('${r._id}','accepted')">Accept</button>
+              <button class="secondary" onclick="updateRequest('${r._id}','declined')">Decline</button>
+            </div>
+          </div>
+        `).join('') || '<div class="muted">No incoming requests.</div>';
+      });
+    }
+
+    function updateRequest(id, status) {
+      api('/api/requests/' + id, { method: 'PATCH', body: JSON.stringify({ status }) })
+        .then(data => {
+          if (data._id) {
+            loadRequests();
+          } else {
+            alert(data.message || 'Update failed');
+          }
+        });
+    }
+
+    // Initial load
+    loadBooks();
+  </script>
+</body>
+</html>
