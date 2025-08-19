@@ -127,4 +127,3 @@ bookswap-marketplace/
 - Works with any MongoDB connection string (local or Atlas).
 - No external services required beyond MongoDB.
 
-Good luck with your interview! ✌️
